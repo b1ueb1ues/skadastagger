@@ -1,0 +1,9 @@
+## Interface: 70000
+## Title: Skada Stagger
+## Notes: A module for Skada that shows stagger
+## Author: Damnae
+## Version: 1.6
+## Dependencies: Skada
+## X-Part-Of: Skada
+
+SkadaStagger.lua
