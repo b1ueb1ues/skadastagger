@@ -75,6 +75,14 @@ local function logStaggerTick(set, tick, isCurrent)
 end
 
 local purify = {}
+local function logStaggerPurify_static(set, purify)
+      local player = Skada:get_player(set, purify.srcGUID, purify.srcName)
+      if player then
+            player.stagger.purified_static = player.stagger.purified_static + purify.samount
+            player.stagger.purifyCount = player.stagger.purifyCount + 1
+      end
+end
+
 local function logStaggerPurify(set, purify)
       local player = Skada:get_player(set, purify.srcGUID, purify.srcName)
       if player then
@@ -86,6 +94,20 @@ local function logStaggerPurify(set, purify)
       end
 end
 
+local function logStaggerQuicksip_static(set, purify)
+      local player = Skada:get_player(set, purify.srcGUID, purify.srcName)
+      if player then
+            player.stagger.purified_quicksip_static = player.stagger.purified_quicksip_static + purify.samount
+      end
+end
+
+local function logStaggerQuicksip(set, purify)
+      local player = Skada:get_player(set, purify.srcGUID, purify.srcName)
+      if player then
+            player.stagger.purified_quicksip = player.stagger.purified_quicksip + purify.samount
+      end
+end
+
 local function log_stabsorb(set,samount, dstGUID, dstName)
 	-- Stagger absorbs
 	local player = Skada:get_player(set, dstGUID, dstName)
@@ -94,7 +116,7 @@ local function log_stabsorb(set,samount, dstGUID, dstName)
 	if set == Skada.current then
 	    local stvar = player.stagger
 	    stvar.stpool = stvar.stpool + samount
-	    print('--',dstName,player.stagger.absorbed,stvar.stpool,UnitStagger(dstName))
+	    print('--absorb',samount,'stpool',stvar.stpool,'unitst',UnitStagger(dstName))
 	end
 
 	--print(player.stagger.stpool,UnitStagger(dstName))
@@ -132,12 +154,13 @@ end
 
 last = 0
 sttaken = 0
+pbratelist = {0.40,0.41,0.42,0.43,0.44,0.45,0.46,0.47,0.60,0.61,0.62,0.63,0.64,0.65,0.66,0.67}
+isbratelist = {0,0.05}
 local function SpellDamage(timestamp, eventtype, srcGUID, srcName, srcFlags, dstGUID, dstName, dstFlags, ...)
     local spellId, spellName, spellSchool, samount, soverkill, sschool, sresisted, sblocked, sabsorbed, scritical, sglancing, scrushing = ...
     if spellId == 124255 then -- Stagger damage
 	local player = Skada:get_player(Skada.current, dstGUID, dstName)
 	stvar = player.stagger
-	print(stvar.stpool)
 	tick.timestamp = timestamp
 	tick.dstGUID = dstGUID
 	tick.dstName = dstName
@@ -146,9 +169,43 @@ local function SpellDamage(timestamp, eventtype, srcGUID, srcName, srcFlags, dst
 	logStaggerTick(Skada.current, tick, true)
 	logStaggerTick(Skada.total, tick, false)
 
-	stvar.stpool = stvar.stpool - samount
 
-	local st = UnitStagger(srcName) 
+	local unitst = UnitStagger(srcName) 
+	print ('--stdmg',samount,'stpool',stvar.stpool,'unitst:',unitst)
+	
+
+
+
+	local prate = -1
+	local irate = -1
+	local found = 0
+	for pflag,pr in ipairs(pbratelist) do 
+	    if found == 1 then
+		break
+	    end
+	    for iflag,ir in ipairs(isbratelist) do
+		testst = stvar.stpool
+		for sflag,spellname in ipairs(stvar.spellhistory) do
+		    if spellname == 'pb' then
+			testst = testst - testst * (1-pr)
+		    elseif spellname == 'isb' then
+			testst = testst - testst * (1-ir)
+		    end
+		end
+		if testst-unitst<2 or unitst-testst<2 then 
+		    prate = pr
+		    irate = ir
+		    found = 1
+		    break
+		end
+	    end
+	end
+
+	stvar.stpool = unitst
+
+	table.foreach(stvar.spellhistory, print) 
+	stvar.spellhistory = {}
+	--print (stvar.spellhistory)
 	sttaken = sttaken + samount
 	--prt = string.format('%f, %f, %f',tmp,samount, last-tmp)
 	--prt = string.format('%d,%d,%d,%d',st,sttaken,stpury,stin)
@@ -164,18 +221,27 @@ local function SpellCast(timestamp, eventtype, srcGUID, srcName, srcFlags, dstGU
     local player = Skada:get_player(Skada.current, srcGUID, srcName)
     local stvar = player.stagger
     if spellId == 119582 then -- Purifying brew
-	local purifiedAmount = UnitStagger(srcName) * getPurifyPercent(srcGUID)
-	printdebug(srcName.." purified "..purifiedAmount.." stagger")
-
+	table.insert(stvar.spellhistory,'pb')
+	print('pb')
+	print('stpool',player.stagger.stpool,'unitst',UnitStagger(srcName))
+	local purifiedAmount =  stvar.stpool * 0.44
 	stvar.stpool = stvar.stpool * 0.56
-
 	purify.srcGUID = srcGUID
 	purify.srcName = srcName
 	purify.samount = purifiedAmount
-	logStaggerPurify(Skada.current, purify)
-	logStaggerPurify(Skada.total, purify)
+	logStaggerPurify_static(Skada.current, purify)
+	logStaggerPurify_static(Skada.total, purify)
     elseif spellId == 115308 then
-	  print('ironskin')
+	table.insert(stvar.spellhistory,'isb')
+	print('isb')
+	print('stpool',player.stagger.stpool,'unitst',UnitStagger(srcName))
+	local purifiedAmount =  stvar.stpool * 0.05
+	stvar.stpool = stvar.stpool * 0.95
+	purify.srcGUID = srcGUID
+	purify.srcName = srcName
+	purify.samount = purifiedAmount
+	logStaggerQuicksip_static(Skada.current, purify)
+	logStaggerQuicksip_static(Skada.total, purify)
     end
 end
 
@@ -203,20 +269,21 @@ function modDetails:Update(win, set)
       local player = Skada:find_player(set, self.playerid)
       if player then
             local playerStagger = player.stagger
-
-	    local damageStaggered = playerStagger.taken + playerStagger.purified
             local staggerabsorbed = playerStagger.absorbed
+	    local damageStaggered = staggerabsorbed
             if damageStaggered == 0 then
                   return
             end
-            local setDuration = getSetDuration(set)
 
+            local setDuration = getSetDuration(set)
             local datasetContext = {}
 
             local staggerabsorb = nextDataset(win, datasetContext)
             staggerabsorb.label = "Staggered absorbed"
             staggerabsorb.valuetext = Skada:FormatNumber(staggerabsorbed)
             staggerabsorb.value = 1
+
+
 
             local staggered = nextDataset(win, datasetContext)
             staggered.label = "Damage Staggered"
@@ -230,15 +297,38 @@ function modDetails:Update(win, set)
 
             if playerStagger.purifyCount > 0 then
                   local staggerPurified = nextDataset(win, datasetContext)
-                  staggerPurified.label = "Purified"
+                  staggerPurified.label = "Purified_brew"
                   staggerPurified.valuetext = Skada:FormatNumber(playerStagger.purified)..(" (%02.1f%%)"):format(playerStagger.purified / damageStaggered * 100)
                   staggerPurified.value = playerStagger.purified / damageStaggered
 
                   local staggerPurifiedAvg = nextDataset(win, datasetContext)
-                  staggerPurifiedAvg.label = "Purified (average)"
+                  staggerPurifiedAvg.label = "Purified_brew (average)"
                   staggerPurifiedAvg.valuetext = Skada:FormatNumber(playerStagger.purified / playerStagger.purifyCount).." ("..playerStagger.purifyCount.."x)"
                   staggerPurifiedAvg.value = (playerStagger.purified / playerStagger.purifyCount) / damageStaggered
             end
+
+            if playerStagger.purifyCount > 0 then
+                  local staggerPurified_s = nextDataset(win, datasetContext)
+                  staggerPurified_s.label = "Purified_brew_static"
+                  staggerPurified_s.valuetext = Skada:FormatNumber(playerStagger.purified_static)..(" (%02.1f%%)"):format(playerStagger.purified_static / damageStaggered * 100)
+                  staggerPurified_s.value = playerStagger.purified_static / damageStaggered
+
+            end
+
+	    if playerStagger.purified_quicksip > 0 then
+		local staggerquicksip = nextDataset(win, datasetContext)
+		staggerquicksip.label = "Purified_quicksip"
+		staggerquicksip.valuetext = Skada:FormatNumber(playerStagger.purified_quicksip)..(" (%02.1f%%)"):format(playerStagger.purified_quicksip / damageStaggered * 100)
+		staggerquicksip.value = playerStagger.purified_quicksip / damageStaggered
+	    end
+
+	    if playerStagger.purified_quicksip_static > 0 then
+		local staggerquicksip_s = nextDataset(win, datasetContext)
+		staggerquicksip_s.label = "Purified_quicksip_static"
+		staggerquicksip_s.valuetext = Skada:FormatNumber(playerStagger.purified_quicksip_static)..(" (%02.1f%%)"):format(playerStagger.purified_quicksip_static / damageStaggered * 100)
+		staggerquicksip_s.value = playerStagger.purified_quicksip_static / damageStaggered
+	    end
+
 
             if setDuration > 0 and playerStagger.duration > 0 then
                   local staggerDuration = nextDataset(win, datasetContext)
@@ -268,14 +358,22 @@ function mod:AddPlayerAttributes(player, set)
             player.stagger = 
             {
 		  purified_quicksip = 0,
+		  purified_quicksip_static = 0,
 
 		  absorbed = 0,
 		  stpool = 0,
+		
+		  t20 = -1,
+		  qsrate = -1,
+		  pbrate = -1,
+		  spellhistory = {},
 
                   taken = 0,
                   purified = 0,
+                  purified_static = 0,
                   purifyCount = 0,
                   purifyMax = 0,
+
 
                   lastTickTime = nil,
                   tickMax = 0,
