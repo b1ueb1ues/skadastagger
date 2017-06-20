@@ -31,17 +31,6 @@ local function nextDataset(win, context)
       return dataset
 end
 
-local function getPurifyPercent(unitGUID)
-      local talentGroup = GetActiveSpecGroup()
-      _, _, _, elusiveDanceSelected, _ = GetTalentInfo(7, 1, talentGroup, true, unitGUID)
-
-      local purifyPercent = 0.5
-      if elusiveDanceSelected then
-            purifyPercent = purifyPercent + 0.15
-      end
-      --printdebug("Purify percent for "..unitGUID..": "..purifyPercent)
-      return purifyPercent
-end
 
 local tick = {}
 local function logStaggerTick(set, tick, isCurrent)
@@ -115,8 +104,12 @@ local function log_stabsorb(set,samount, dstGUID, dstName)
 
 	if set == Skada.current then
 	    local stvar = player.stagger
-	    stvar.stpool = stvar.stpool + samount
-	    print('--absorb',samount,'stpool',stvar.stpool,'unitst',UnitStagger(dstName))
+	    --stvar.stpool = stvar.stpool + samount
+	    stvar.stpool_static = stvar.stpool_static + samount
+	    table.insert(stvar.spellhistory, 'stin')
+	    table.insert(stvar.spellhistory, samount)
+	    --table.foreach(stvar.spellhistory, print) 
+	    print('--absorb',samount,'stpoolb4',stvar.stpool,'unitst',UnitStagger(dstName))
 	end
 
 	--print(player.stagger.stpool,UnitStagger(dstName))
@@ -154,10 +147,106 @@ end
 
 last = 0
 sttaken = 0
-pbratelist = {0.40,0.41,0.42,0.43,0.44,0.45,0.46,0.47,0.60,0.61,0.62,0.63,0.64,0.65,0.66,0.67}
-isbratelist = {0,0.05}
+
+local function calcrate(stvar,realst)
+
+    local pbratelist = {0.40,0.41,0.42,0.43,0.44,0.45,0.46,0.47,0.60,0.61,0.62,0.63,0.64,0.65,0.66,0.67}
+    local qsratelist = {0,0.05}
+
+    local useisb = 0
+    local usepb = 0
+
+    local prate = -1
+    local qsrate = -1
+    local pamount = 0
+    local qsamount = 0
+
+    local found = 0
+
+    for pflag,pr in ipairs(pbratelist) do 
+	if found == 1 then
+	    break
+	end
+	for iflag,ir in ipairs(qsratelist) do
+	    testst = stvar.stpool
+	    for sflag,spellname in ipairs(stvar.spellhistory) do
+		if spellname == 'pb' then
+		    --print('calc pb stb4',testst)
+		    pamount = testst*pr
+		    testst = testst - pamount
+		    --print('calc pb stafter',testst)
+		    usepb = 1
+		elseif spellname == 'isb' then
+		    qsamount = testst*ir
+		    testst = testst - qsamount
+		    useisb = 1
+		elseif spellname == 'stin' then
+		    testst = testst + stvar.spellhistory[sflag+1]
+		end
+	    end
+	    print ('pr,ir,emust,unitst',pr,ir,testst,realst)
+	    if testst-realst< 2 and testst-realst>-2 then 
+		found = found + 1
+		qsrate = ir
+		prate = pr
+	    end
+	end
+    end
+
+    if found ~= 0 then
+	print('found:',found,'pb isb pr ir',usepb,useisb,prate,qsrate)
+	if usepb ~= 0 then
+	    stvar.pbrate = prate
+	    print('usepb')
+	end
+	if useisb ~= 0 then
+	    stvar.qsrate = qsrate
+	    print('useisb')
+	end
+    end
+    return pamount,qsamount
+end
+
+local function logspelllist(stvar,srcGUID,srcName)
+    testst = stvar.stpool
+    pamount = 0
+    qsamount = 0
+    pr = stvar.pbrate
+    ir = stvar.qsrate
+    for sflag,spellname in ipairs(stvar.spellhistory) do
+	if spellname == 'pb' then
+	    pamount = testst*pr
+	    testst = testst - pamount
+	elseif spellname == 'isb' then
+	    qsamount = testst*ir
+	    testst = testst - qsamount
+	elseif spellname == 'stin' then
+	    testst = testst + stvar.spellhistory[sflag+1]
+	end
+    end
+
+    if pamount ~= 0 then
+	local purify = {}
+	purify.srcGUID = srcGUID
+	purify.srcName = srcName
+	purify.samount = pamount
+	logStaggerPurify(Skada.current, purify)
+	logStaggerPurify(Skada.total, purify)
+    end
+    if qsamount ~= 0 then
+	local purify = {}
+	purify.srcGUID = srcGUID
+	purify.srcName = srcName
+	purify.samount = qsamount
+	logStaggerQuicksip(Skada.current, purify)
+	logStaggerQuicksip(Skada.total, purify)
+    end
+end
+
 local function SpellDamage(timestamp, eventtype, srcGUID, srcName, srcFlags, dstGUID, dstName, dstFlags, ...)
     local spellId, spellName, spellSchool, samount, soverkill, sschool, sresisted, sblocked, sabsorbed, scritical, sglancing, scrushing = ...
+
+
     if spellId == 124255 then -- Stagger damage
 	local player = Skada:get_player(Skada.current, dstGUID, dstName)
 	stvar = player.stagger
@@ -172,38 +261,47 @@ local function SpellDamage(timestamp, eventtype, srcGUID, srcName, srcFlags, dst
 
 	local unitst = UnitStagger(srcName) 
 	print ('--stdmg',samount,'stpool',stvar.stpool,'unitst:',unitst)
-	
 
+	if stvar.spellhistory[1] ~= nil then
+	    if stvar.spellhistory[1] == 'stin' and stvar.spellhistory[3] == nil then
+		local donothing = nil
+	    else
+		print('cast!')
+		table.foreach(stvar.spellhistory, print) 
 
-
-	local prate = -1
-	local irate = -1
-	local found = 0
-	for pflag,pr in ipairs(pbratelist) do 
-	    if found == 1 then
-		break
-	    end
-	    for iflag,ir in ipairs(isbratelist) do
-		testst = stvar.stpool
-		for sflag,spellname in ipairs(stvar.spellhistory) do
-		    if spellname == 'pb' then
-			testst = testst - testst * (1-pr)
-		    elseif spellname == 'isb' then
-			testst = testst - testst * (1-ir)
+		if stvar.pbrate == -1 or stvar.qsrate == -1 then
+		    print('calcrate')
+		    local realst = unitst+samount
+		    pamount,qsamount = calcrate(stvar,realst)	
+		    if pamount ~= 0 then
+			local purify = {}
+			purify.srcGUID = srcGUID
+			purify.srcName = srcName
+			purify.samount = pamount
+			logStaggerPurify(Skada.current, purify)
+			logStaggerPurify(Skada.total, purify)
 		    end
-		end
-		if testst-unitst<2 or unitst-testst<2 then 
-		    prate = pr
-		    irate = ir
-		    found = 1
-		    break
+		    if qsamount ~= 0 then
+			local purify = {}
+			purify.srcGUID = srcGUID
+			purify.srcName = srcName
+			purify.samount = qsamount
+			logStaggerQuicksip(Skada.current, purify)
+			logStaggerQuicksip(Skada.total, purify)
+		    end
+
+		else
+		    print('rate:',stvar.pbrate,stvar.qsrate)
+		    logspelllist(stvar,srcGUID,srcName)
 		end
 	    end
 	end
 
-	stvar.stpool = unitst
 
-	table.foreach(stvar.spellhistory, print) 
+	stvar.stpool = unitst
+	stvar.stpool_static = unitst
+
+	--table.foreach(stvar.spellhistory, print) 
 	stvar.spellhistory = {}
 	--print (stvar.spellhistory)
 	sttaken = sttaken + samount
@@ -222,10 +320,10 @@ local function SpellCast(timestamp, eventtype, srcGUID, srcName, srcFlags, dstGU
     local stvar = player.stagger
     if spellId == 119582 then -- Purifying brew
 	table.insert(stvar.spellhistory,'pb')
-	print('pb')
-	print('stpool',player.stagger.stpool,'unitst',UnitStagger(srcName))
-	local purifiedAmount =  stvar.stpool * 0.44
-	stvar.stpool = stvar.stpool * 0.56
+	print('cast pb','stpool',player.stagger.stpool,'unitst',UnitStagger(srcName))
+	local purifiedAmount =  stvar.stpool_static * 0.44
+	--stvar.stpool = stvar.stpool * 0.56
+	local purify = {}
 	purify.srcGUID = srcGUID
 	purify.srcName = srcName
 	purify.samount = purifiedAmount
@@ -233,10 +331,9 @@ local function SpellCast(timestamp, eventtype, srcGUID, srcName, srcFlags, dstGU
 	logStaggerPurify_static(Skada.total, purify)
     elseif spellId == 115308 then
 	table.insert(stvar.spellhistory,'isb')
-	print('isb')
-	print('stpool',player.stagger.stpool,'unitst',UnitStagger(srcName))
-	local purifiedAmount =  stvar.stpool * 0.05
-	stvar.stpool = stvar.stpool * 0.95
+	print('cast isb','stpool',player.stagger.stpool,'unitst',UnitStagger(srcName))
+	local purifiedAmount =  stvar.stpool_static * 0.05
+	--stvar.stpool = stvar.stpool * 0.95
 	purify.srcGUID = srcGUID
 	purify.srcName = srcName
 	purify.samount = purifiedAmount
@@ -362,6 +459,7 @@ function mod:AddPlayerAttributes(player, set)
 
 		  absorbed = 0,
 		  stpool = 0,
+		  stpool_static = 0,
 		
 		  t20 = -1,
 		  qsrate = -1,
