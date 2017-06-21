@@ -1,0 +1,10 @@
+## Interface: 70200
+## Title: Skada Stagger(pantyblue)
+## Notes: A module for Skada that shows stagger. Modified from Damnae's skadastagger1.6 but more reliable and accurate
+## Author: pantyblue
+## Author(skada stagger 1.6): Damnae
+## Version: 1.0
+## Dependencies: Skada
+## X-Part-Of: Skada
+
+SkadaStagger.lua
