@@ -13,7 +13,7 @@ local function debugprint(...)
 end
 
 
-local lang='zh'
+local lang='en'
 local labels={
 }
 if lang == 'zh' then
@@ -135,7 +135,7 @@ local function calcrate(stvar,realst)
     end
 
     if found == 0 then
-	print('404notfound','stpool',stvar.stpool,'realst',realst)
+	--print('404notfound','stpool',stvar.stpool,'realst',realst)
 	usepb=0
 	useisb=0
 	pamounts={}
